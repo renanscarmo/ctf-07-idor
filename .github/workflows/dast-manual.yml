@@ -1,0 +1,56 @@
+name: DAST ZAP (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      comando:
+        description: "Comando que liga o app"
+        default: "python app.py"
+      porta:
+        description: "Porta do app"
+        default: "5000"
+
+permissions:
+  contents: read
+
+jobs:
+  dast_zap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+
+      - name: Ligar o app em segundo plano
+        env:
+          COMANDO: ${{ inputs.comando }}
+          PORTA: ${{ inputs.porta }}
+        run: |
+          nohup $COMANDO > app.log 2>&1 &
+          for i in $(seq 1 15); do
+            curl -s http://127.0.0.1:$PORTA/ > /dev/null && break
+            sleep 1
+          done
+
+      - name: ZAP full scan
+        uses: zaproxy/action-full-scan@v0.12.0
+        with:
+          target: "http://127.0.0.1:${{ inputs.porta }}"
+          cmd_options: "-I -m 2"
+          allow_issue_writing: false
+          fail_action: true
+
+      - name: Falhar se o ZAP achou XSS
+        run: |
+          if [ ! -f report_json.json ]; then
+            echo "Relatorio JSON nao encontrado"
+            ls
+            exit 1
+          fi
+          if grep -Eqi '"pluginid"[[:space:]]*:[[:space:]]*"(40012|10010)"' report_json.json; then
+            echo "ZAP achou XSS refletido (40012) ou cookie sem HttpOnly (10010)"
+            exit 1
+          fi
+          echo "Sem XSS refletido nem cookie sem HttpOnly"
