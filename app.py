@@ -57,6 +57,8 @@ def ver_pedido(numero):
     pedido = PEDIDOS.get(numero)
     if not pedido:
         abort(404)
+    if pedido["dono"] != session["usuario"]:
+        abort(403)
     return f"<h1>Pedido {numero}</h1><p>{pedido['item']} - R$ {pedido['valor']}</p>"
 
 
